@@ -1,7 +1,7 @@
 # packbits-ts
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![JSR](https://jsr.io/badges/@yetdragon/packbits)](https://jsr.io/@yetdragon/packbits)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 A TypeScript implementation of the [PackBits](https://en.wikipedia.org/wiki/PackBits) compression algorithm, commonly used in TIFF and Macintosh PICT files.
 

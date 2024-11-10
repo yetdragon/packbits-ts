@@ -1,6 +1,6 @@
 // path: /src/mod.bench.ts
 
-import { compress, decompress } from "../src/mod.ts"
+import { compress, decompress } from "./mod.ts"
 
 const REPEATS = 1000
 

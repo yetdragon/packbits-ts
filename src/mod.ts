@@ -33,7 +33,7 @@ function validateInput(data: unknown): asserts data is Uint8Array {
  *
  * @param data The data to compress
  * @returns The compressed data
- * @throws {PackBitsError} If the input is invalid
+ * @throws {PackBitsError} if the input is invalid
  * @example
  * ```typescript
  * const data = new Uint8Array([0xAA, 0xAA, 0xAA, 0x80, 0x00])
@@ -46,8 +46,8 @@ export function compress(data: Uint8Array): Uint8Array {
 
 	const result = new Uint8Array(2 * data.length)
 	let writeIndex = 0
-
 	let readIndex = 0
+
 	while (readIndex < data.length) {
 		const runStart = readIndex
 
