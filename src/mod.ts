@@ -165,3 +165,9 @@ function calculateDecompressedSize(data: Uint8Array): number {
 
 	return size
 }
+
+export default {
+	PackBitsError,
+	compress,
+	decompress
+}
