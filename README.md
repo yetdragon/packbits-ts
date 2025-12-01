@@ -1,7 +1,7 @@
 # packbits-ts
 
 [![JSR](https://jsr.io/badges/@yetdragon/packbits)](https://jsr.io/@yetdragon/packbits)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE.md)
 
 A TypeScript implementation of the [PackBits](https://en.wikipedia.org/wiki/PackBits) compression algorithm, commonly used in TIFF and Macintosh PICT files.
 
@@ -25,7 +25,3 @@ console.log("Compressed size:", compressed.length)
 const decompressed = decompress(compressed)
 console.log("Original size:", decompressed.length)
 ```
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE.txt](LICENSE.txt) file for details.
