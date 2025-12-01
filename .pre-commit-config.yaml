@@ -3,7 +3,7 @@ repos:
     hooks:
       - id: test
         name: Test PackBits compression/decompression
-        entry: deno test
+        entry: deno task test
         language: system
         files: mod(\.test)?\.ts$
         pass_filenames: false
