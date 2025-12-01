@@ -1,9 +1,9 @@
 repos:
   - repo: local
     hooks:
-      - id: check
-        name: Check PackBits compression/decompression
+      - id: test
+        name: Test PackBits compression/decompression
         entry: deno test
         language: system
-        files: mod(.\test)?\.ts$
+        files: mod(\.test)?\.ts$
         pass_filenames: false
