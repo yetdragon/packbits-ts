@@ -1,5 +1,6 @@
 {
 	"tasks": {
+		"bench": "deno bench",
 		"publish": "deno publish",
 		"test": "deno test",
 		"test:publish": "deno publish --allow-dirty --dry-run"

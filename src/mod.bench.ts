@@ -1,5 +1,3 @@
-// path: /src/mod.bench.ts
-
 import { compress, decompress } from "./mod.ts"
 
 const REPEATS = 1000
@@ -27,7 +25,6 @@ const UNCOMPRESSED = new Uint8Array(
 
 // Pre-compress the test data for decompression benchmark
 const COMPRESSED = compress(UNCOMPRESSED)
-
 
 Deno.bench({
 	name: "Compress mixed patterns",

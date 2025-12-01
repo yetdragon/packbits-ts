@@ -1,5 +1,3 @@
-// path: /src/mod.test.ts
-
 import { assertEquals } from "@std/assert"
 
 import { PackBitsError, compress, decompress } from "./mod.ts"
@@ -33,12 +31,13 @@ const TEST_CASES = [
 		compressed: new Uint8Array([0x81, 0xAA, 0xB9, 0xAA])
 	},
 	{
+		// 200 bytes of alternating data → two literal runs (128 + 72 bytes)
 		name: `Long alternating bytes`,
 		data: new Uint8Array(new Array(100).fill([0xAA, 0x55]).flat()),
 		compressed: new Uint8Array([
-			0x7F,
+			0x7F, // 128 literal bytes
 			...new Array(64).fill([0xAA, 0x55]).flat(),
-			0x47,
+			0x47, // 72 literal bytes
 			...new Array(36).fill([0xAA, 0x55]).flat()
 		])
 	},
@@ -46,6 +45,11 @@ const TEST_CASES = [
 		name: `Maximum run length (128 bytes)`,
 		data: new Uint8Array(new Array(128).fill(0xFF)),
 		compressed: new Uint8Array([0x81, 0xFF])
+	},
+	{
+		name: "2-byte replicate run optimization when preceded and followed by literal runs",
+		data: new Uint8Array([0x54, 0xAA, 0xAA, 0x80, 0x00]),
+		compressed: new Uint8Array([0x04, 0x54, 0xAA, 0xAA, 0x80, 0x00])
 	}
 ]
 
@@ -84,63 +88,16 @@ Deno.test(`Roundtrip compression/decompression`, async (t) => {
 	}
 })
 
-const COMPRESSION_ERROR_CASES = [
-	{
-		name: `Invalid input type (null)`,
-		input: null,
-		expectedError: `Input must be a \`Uint8Array\``
-	},
-	{
-		name: `Invalid input type (number array)`,
-		input: [1, 2, 3],
-		expectedError: `Input must be a \`Uint8Array\``
-	}
-]
-
-Deno.test(`Handle compression errors`, async (t) => {
-	for (const { name, input, expectedError } of COMPRESSION_ERROR_CASES) {
-		await t.step(name, () => {
-			try {
-				// deno-lint-ignore no-explicit-any
-				compress(input as any)
-				throw new Error(`Expected error was not thrown`)
-			} catch (error) {
-				assertEquals(error instanceof PackBitsError, true)
-				if (error instanceof Error) {
-					assertEquals(error.message, expectedError)
-				} else {
-					throw error
-				}
-			}
-		})
-	}
-})
-
-const DECOMPRESSION_ERROR_CASES = [
-	...COMPRESSION_ERROR_CASES,
-	{
-		name: `Malformed compressed data (truncated)`,
-		input: new Uint8Array([0x7F]), // count byte without data
-		expectedError: `Unexpected end of compressed data`
-	}
-]
-
-
 Deno.test(`Handle decompression errors`, async (t) => {
-	for (const { name, input, expectedError } of DECOMPRESSION_ERROR_CASES) {
-		await t.step(name, () => {
-			try {
-				// deno-lint-ignore no-explicit-any
-				decompress(input as any)
-				throw new Error(`Expected error was not thrown`)
-			} catch (error) {
-				assertEquals(error instanceof PackBitsError, true)
-				if (error instanceof Error) {
-					assertEquals(error.message, expectedError)
-				} else {
-					throw error
-				}
+	await t.step(`Malformed compressed data (truncated)`, () => {
+		try {
+			decompress(new Uint8Array([0x7F])) // count byte without data
+			throw new Error(`Expected error was not thrown`)
+		} catch (error) {
+			assertEquals(error instanceof PackBitsError, true)
+			if (error instanceof PackBitsError) {
+				assertEquals(error.message, `Unexpected end of compressed data`)
 			}
-		})
-	}
+		}
+	})
 })

@@ -1,5 +1,3 @@
-// path: /src/mod.ts
-
 /**
  * @module packbits
  *
@@ -14,17 +12,7 @@ const MAX_RUN_LENGTH = 128
 export class PackBitsError extends Error {
 	constructor(message: string) {
 		super(message)
-		this.name = `PackBitsError`
-	}
-}
-
-/**
- * Validates that the input is a `Uint8Array`
- * @throws {PackBitsError} if the input is not a `Uint8Array`
- */
-function validateInput(data: unknown): asserts data is Uint8Array {
-	if (!(data instanceof Uint8Array)) {
-		throw new PackBitsError(`Input must be a \`Uint8Array\``)
+		this.name = PackBitsError.name
 	}
 }
 
@@ -42,47 +30,72 @@ function validateInput(data: unknown): asserts data is Uint8Array {
  * ```
  */
 export function compress(data: Uint8Array): Uint8Array {
-	validateInput(data)
-
 	const result = new Uint8Array(2 * data.length)
 	let writeIndex = 0
 	let readIndex = 0
 
 	while (readIndex < data.length) {
-		const runStart = readIndex
+		// Collect literal bytes, absorbing short repeat runs when beneficial
+		const literalStart = readIndex
+		let literalCount = 0
 
-		// Look for repeated bytes
-		while (
-			readIndex < data.length - 1 &&
-			data[readIndex] === data[readIndex + 1] &&
-			readIndex - runStart < MAX_RUN_LENGTH - 1
-		) {
-			readIndex += 1
-		}
-		const runLength = readIndex - runStart + 1
-		if (runLength > 1) {
-			// Write repeated run
-			result[writeIndex++] = 257 - runLength
-			result[writeIndex++] = data[runStart]
-			readIndex += 1
-		} else {
-			// Collect literal bytes
-			const literalStart = readIndex
-			let literalCount = 0
+		while (readIndex < data.length && literalCount < MAX_RUN_LENGTH) {
+			// Count consecutive repeated bytes starting at current position
+			let repeatCount = 1
 			while (
-				readIndex < data.length &&
-				literalCount < MAX_RUN_LENGTH &&
-				(readIndex === data.length - 1 || data[readIndex] !== data[readIndex + 1])
+				readIndex + repeatCount < data.length &&
+				data[readIndex + repeatCount] === data[readIndex] &&
+				repeatCount < MAX_RUN_LENGTH
 			) {
-				literalCount += 1
-				readIndex += 1
+				repeatCount += 1
 			}
 
-			// Write literal run
+			// Decide whether to encode as repeat run or absorb into literal run
+			//
+			// A repeat run of length N costs 2 bytes (header + value).
+			// Including N bytes in a literal run costs N bytes (no extra header if already in literal).
+			//
+			// Break out for repeat run when:
+			// - Run length >= 3: repeat (2 bytes) beats literal (3 bytes)
+			// - Run length == 2 at start: repeat (2 bytes) equals literal (3 bytes with header),
+			//   but we prefer repeat for consistency
+			// - Run length == 2 mid-literal: absorb into literal (2 bytes) beats new repeat (2 bytes + literal overhead)
+			const isAtLiteralStart = literalCount === 0
+			const shouldStartRepeatRun = repeatCount >= 3 || (repeatCount === 2 && isAtLiteralStart)
+
+			if (shouldStartRepeatRun) {
+				break
+			}
+
+			// Absorb into literal run (either single byte or short repeat that's cheaper to inline)
+			const bytesToAbsorb = Math.min(repeatCount, MAX_RUN_LENGTH - literalCount)
+			literalCount += bytesToAbsorb
+			readIndex += bytesToAbsorb
+		}
+
+		// Write accumulated literal run if any
+		if (literalCount > 0) {
 			result[writeIndex++] = literalCount - 1
 			for (let j = 0; j < literalCount; j += 1) {
 				result[writeIndex++] = data[literalStart + j]
 			}
+		}
+
+		// Handle repeat run only if we broke out due to shouldStartRepeatRun (not due to hitting MAX_RUN_LENGTH)
+		// If literalCount == MAX_RUN_LENGTH, we should continue to next iteration to start a new literal run
+		if (readIndex < data.length && literalCount < MAX_RUN_LENGTH) {
+			let repeatCount = 1
+			while (
+				readIndex + repeatCount < data.length &&
+				data[readIndex + repeatCount] === data[readIndex] &&
+				repeatCount < MAX_RUN_LENGTH
+			) {
+				repeatCount += 1
+			}
+
+			result[writeIndex++] = 257 - repeatCount
+			result[writeIndex++] = data[readIndex]
+			readIndex += repeatCount
 		}
 	}
 
@@ -102,8 +115,6 @@ export function compress(data: Uint8Array): Uint8Array {
  * ```
  */
 export function decompress(data: Uint8Array): Uint8Array {
-	validateInput(data)
-
 	const resultSize = calculateDecompressedSize(data)
 	const result = new Uint8Array(resultSize)
 	let writeIndex = 0
