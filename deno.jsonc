@@ -1,14 +1,22 @@
 {
-	"name": "@yetdragon/packbits",
-	"version": "1.1.0",
-	"exports": "./src/mod.ts",
+	"tasks": {
+		"publish": "deno publish",
+		"test": "deno test",
+		"test:publish": "deno publish --allow-dirty --dry-run"
+	},
+
 	"imports": {
 		"@std": "jsr:@std"
 	},
+
+	"name": "@yetdragon/packbits",
+	"version": "1.1.0",
+	"exports": "./src/mod.ts",
 	"publish": {
 		"include": [
 			"LICENSE.md",
 			"README.md",
+			"deno.jsonc",
 			"src/mod.ts"
 		]
 	}
