@@ -1,5 +1,5 @@
 name: Publish to JSR
-run-name: Working on ${{ github.ref_name }}
+run-name: Publishing ${{ github.ref_name }} to JSR
 
 on:
   push:
@@ -13,5 +13,14 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - run: npx jsr publish
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+
+      - name: Run tests
+        run: deno task test
+
+      - name: Publish to JSR
+        run: deno task publish
