@@ -1,40 +1,30 @@
 import { compress, decompress } from "./mod.ts"
 
-const REPEATS = 1000
-
-/**
- * Test data with mixed content:
- * - Repeated sequences
- * - Single values
- * - Alternating values
- */
-const TEST_PATTERNS = {
-	repeated: [0xAA, 0xAA, 0xAA, 0xAA, 0xAA],
-	single: [0x80, 0x00],
+const PATTERNS = {
+	repeating:   [0xAA, 0xAA, 0xAA, 0xAA, 0xAA],
+	single:      [0x80, 0x00],
 	alternating: [0xAA, 0x55, 0xAA, 0x55]
 }
 
-// Generate test data by repeating patterns
-const UNCOMPRESSED = new Uint8Array(
-	new Array(REPEATS).fill([
-		...TEST_PATTERNS.repeated,
-		...TEST_PATTERNS.single,
-		...TEST_PATTERNS.alternating
+const DATA = new Uint8Array(
+	new Array(1000).fill([
+		...PATTERNS.repeating,
+		...PATTERNS.single,
+		...PATTERNS.alternating
 	]).flat()
 )
 
-// Pre-compress the test data for decompression benchmark
-const COMPRESSED = compress(UNCOMPRESSED)
+const COMPRESSED = compress(DATA)
 
 Deno.bench({
-	name: "Compress mixed patterns",
+	name: "Compression",
 	fn: () => {
-		compress(UNCOMPRESSED)
+		compress(DATA)
 	}
 })
 
 Deno.bench({
-	name: "Decompress mixed patterns",
+	name: "Decompression",
 	fn: () => {
 		decompress(COMPRESSED)
 	}
