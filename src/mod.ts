@@ -1,14 +1,10 @@
 /**
- * @module packbits
- *
  * PackBits is a simple run-length compression algorithm used in Macintosh PICT and TIFF files.
+ * @module packbits
  */
 
-const MAX_RUN_LENGTH = 128
+const COPY_THRESHOLD = 32
 
-/**
- * Error thrown when invalid input is provided to PackBits functions
- */
 export class PackBitsError extends Error {
 	constructor(message: string) {
 		super(message)
@@ -17,11 +13,9 @@ export class PackBitsError extends Error {
 }
 
 /**
- * Compress data using the PackBits algorithm
- *
- * @param data The data to compress
- * @returns The compressed data
- * @throws {PackBitsError} if the input is invalid
+ * @param [buffer] Pre-allocated buffer of minimum length ⌈1.5 × `data.length`⌉
+ * @returns the compressed data as a subarray of the buffer
+ * @throws {PackBitsError} if the provided buffer is too small
  * @example
  * ```typescript
  * const data = new Uint8Array([0xAA, 0xAA, 0xAA, 0x80, 0x00])
@@ -29,84 +23,162 @@ export class PackBitsError extends Error {
  * // Result: Uint8Array [0xFE, 0xAA, 0x01, 0x80, 0x00]
  * ```
  */
-export function compress(data: Uint8Array): Uint8Array {
-	const result = new Uint8Array(2 * data.length)
-	let writeIndex = 0
-	let readIndex = 0
-
-	while (readIndex < data.length) {
-		// Collect literal bytes, absorbing short repeat runs when beneficial
-		const literalStart = readIndex
-		let literalCount = 0
-
-		while (readIndex < data.length && literalCount < MAX_RUN_LENGTH) {
-			// Count consecutive repeated bytes starting at current position
-			let repeatCount = 1
-			while (
-				readIndex + repeatCount < data.length &&
-				data[readIndex + repeatCount] === data[readIndex] &&
-				repeatCount < MAX_RUN_LENGTH
-			) {
-				repeatCount += 1
-			}
-
-			// Decide whether to encode as repeat run or absorb into literal run
-			//
-			// A repeat run of length N costs 2 bytes (header + value).
-			// Including N bytes in a literal run costs N bytes (no extra header if already in literal).
-			//
-			// Break out for repeat run when:
-			// - Run length >= 3: repeat (2 bytes) beats literal (3 bytes)
-			// - Run length == 2 at start: repeat (2 bytes) equals literal (3 bytes with header),
-			//   but we prefer repeat for consistency
-			// - Run length == 2 mid-literal: absorb into literal (2 bytes) beats new repeat (2 bytes + literal overhead)
-			const isAtLiteralStart = literalCount === 0
-			const shouldStartRepeatRun = repeatCount >= 3 || (repeatCount === 2 && isAtLiteralStart)
-
-			if (shouldStartRepeatRun) {
-				break
-			}
-
-			// Absorb into literal run (either single byte or short repeat that's cheaper to inline)
-			const bytesToAbsorb = Math.min(repeatCount, MAX_RUN_LENGTH - literalCount)
-			literalCount += bytesToAbsorb
-			readIndex += bytesToAbsorb
-		}
-
-		// Write accumulated literal run if any
-		if (literalCount > 0) {
-			result[writeIndex++] = literalCount - 1
-			for (let j = 0; j < literalCount; j += 1) {
-				result[writeIndex++] = data[literalStart + j]
-			}
-		}
-
-		// Handle repeat run only if we broke out due to shouldStartRepeatRun (not due to hitting MAX_RUN_LENGTH)
-		// If literalCount == MAX_RUN_LENGTH, we should continue to next iteration to start a new literal run
-		if (readIndex < data.length && literalCount < MAX_RUN_LENGTH) {
-			let repeatCount = 1
-			while (
-				readIndex + repeatCount < data.length &&
-				data[readIndex + repeatCount] === data[readIndex] &&
-				repeatCount < MAX_RUN_LENGTH
-			) {
-				repeatCount += 1
-			}
-
-			result[writeIndex++] = 257 - repeatCount
-			result[writeIndex++] = data[readIndex]
-			readIndex += repeatCount
-		}
+export function compress(data: Uint8Array, buffer?: Uint8Array): Uint8Array {
+	if (buffer === undefined) {
+		// Worst case: R2-R2-...-R2
+		buffer = new Uint8Array(Math.ceil(1.5*data.length))
+	} else if (buffer.length < Math.ceil(1.5*data.length)) {
+		throw new PackBitsError(`Provided buffer is too small: expected minimum of ${Math.ceil(1.5*data.length)}, got ${buffer.length} bytes`)
 	}
 
-	return result.slice(0, writeIndex)
+	if (data.length === 0) {
+		return buffer.subarray(0, 0)
+	} else if (data.length === 1) {
+		buffer[0] = 0x00
+		buffer[1] = data[0]
+		return buffer.subarray(0, 2)
+	}
+
+	let anchor = data[0]
+	let crnt = data[1]
+	let iRead = 2
+
+	let iStack = buffer.length - 1
+	let countLastLiteral = 0
+
+	// Collect runs
+	loop: while (true) {
+		let n
+gotoBreakAfterAnchor: {
+		if (anchor === crnt) { // replicate run
+			n = 255
+
+			do {
+				if (iRead >= data.length) {
+					// Try merge R2 into previous L
+					if (n === 255 && countLastLiteral > 0 && countLastLiteral + 2 <= 128) {
+						countLastLiteral += 2
+						buffer[iStack + 1] = countLastLiteral - 1
+					} else {
+						buffer[iStack--] = n
+						countLastLiteral = 0
+					}
+					break loop
+				}
+
+				crnt = data[iRead++]
+				if (crnt !== anchor) {
+					if (n === 255 && countLastLiteral > 0 && countLastLiteral + 2 <= 128) {
+						countLastLiteral += 2
+						buffer[iStack + 1] = countLastLiteral - 1
+					} else {
+						buffer[iStack--] = n
+						countLastLiteral = 0
+					}
+					anchor = crnt
+					break gotoBreakAfterAnchor
+				}
+
+				n -= 1
+			} while (n > 129)
+
+			buffer[iStack--] = n
+			countLastLiteral = 0
+		} else { // literal run
+			n = 1
+
+			let prev = crnt
+
+			do {
+				if (iRead >= data.length) {
+					// Try merge L into previous L, a result of previous R2 merge
+					if (countLastLiteral > 0 && countLastLiteral + n + 1 <= 128) {
+						countLastLiteral += n + 1
+						buffer[iStack + 1] = countLastLiteral - 1
+					} else {
+						buffer[iStack--] = n
+						countLastLiteral = n + 1
+					}
+					break loop
+				}
+
+				crnt = data[iRead++]
+				if (crnt === prev) {
+					if (countLastLiteral > 0 && countLastLiteral + n <= 128) {
+						countLastLiteral += n
+						buffer[iStack + 1] = countLastLiteral - 1
+					} else {
+						buffer[iStack--] = n - 1
+						countLastLiteral = n
+					}
+					anchor = prev
+					continue loop
+				}
+
+				prev = crnt
+				n += 1
+			} while (n < 127)
+
+			if (countLastLiteral > 0 && countLastLiteral + n + 1 <= 128) {
+				countLastLiteral += n + 1
+				buffer[iStack + 1] = countLastLiteral - 1
+			} else {
+				buffer[iStack--] = n
+				countLastLiteral = n + 1
+			}
+		}
+
+		if (iRead >= data.length) break
+
+		anchor = data[iRead++]
+} // afterAnchor:
+		if (iRead >= data.length) {
+			// Try merge last byte into previous L
+			if (countLastLiteral > 0 && countLastLiteral + 1 <= 128) {
+				countLastLiteral += 1
+				buffer[iStack + 1] = countLastLiteral - 1
+			} else {
+				buffer[iStack--] = 0x00
+			}
+			break
+		}
+		crnt = data[iRead++]
+	}
+
+	// Write runs
+	iRead = 0
+	let iStackRead = buffer.length - 1
+	let iWrite = 0
+
+	while (iStackRead > iStack) {
+		const n = buffer[iStackRead--]
+		if (n > 128) { // replicate run
+			const byte = data[iRead]
+			buffer[iWrite++] = n
+			buffer[iWrite++] = byte
+			iRead += 257 - n
+		} else if (n < 128) { // literal run
+			const runLength = n + 1
+			buffer[iWrite++] = n
+			if (runLength >= COPY_THRESHOLD) {
+				buffer.set(data.subarray(iRead, iRead + runLength), iWrite)
+				iRead += runLength
+				iWrite += runLength
+			} else {
+				for (let i = 0; i < runLength; i += 1) {
+					buffer[iWrite++] = data[iRead++]
+				}
+			}
+		}
+		// n === 128: no-op
+	}
+
+	return buffer.subarray(0, iWrite)
 }
 
 /**
- * Decompress PackBits compressed data
- * @param data The PackBits compressed data
- * @returns The decompressed data
- * @throws {PackBitsError} If the input is invalid or compressed data is malformed
+ * @returns decompressed data in a new {@link Uint8Array}
+ * @throws {PackBitsError} if `data` is invalid
  * @example
  * ```typescript
  * const compressed = new Uint8Array([0xFE, 0xAA, 0x01, 0x80, 0x00])
@@ -115,63 +187,67 @@ export function compress(data: Uint8Array): Uint8Array {
  * ```
  */
 export function decompress(data: Uint8Array): Uint8Array {
-	const resultSize = calculateDecompressedSize(data)
-	const result = new Uint8Array(resultSize)
-	let writeIndex = 0
+	const result = new Uint8Array(calculateSizeDecompressed(data))
 
-	let readIndex = 0
-	while (readIndex < data.length) {
-		const count = data[readIndex++]
+	let iRead = 0
+	let iWrite = 0
 
-		if (count < MAX_RUN_LENGTH) {
-			// Literal run
-			const runLength = count + 1
-			for (let j = 0; j < runLength; j += 1) {
-				result[writeIndex++] = data[readIndex + j]
+	while (iRead < data.length) {
+		const n = data[iRead++]
+
+		if (n > 128) { // replicate run
+			const runLength = 257 - n
+
+			const byte = data[iRead++]
+			if (runLength >= COPY_THRESHOLD) {
+				result.fill(byte, iWrite, iWrite + runLength)
+				iWrite += runLength
+			} else {
+				for (let i = 0; i < runLength; i += 1) {
+					result[iWrite++] = byte
+				}
 			}
-			readIndex += runLength
-		} else if (count > MAX_RUN_LENGTH) {
-			// Repeated run
-			const runLength = 257 - count
-			for (let j = 0; j < runLength; j += 1) {
-				result[writeIndex + j] = data[readIndex]
+		} else if (n < 128) { // literal run
+			const runLength = n + 1
+
+			if (runLength >= COPY_THRESHOLD) {
+				result.set(data.subarray(iRead, iRead + runLength), iWrite)
+				iWrite += runLength
+				iRead += runLength
+			} else {
+				for (let i = 0; i < runLength; i += 1) {
+					result[iWrite++] = data[iRead++]
+				}
 			}
-			writeIndex += runLength
-			readIndex += 1
 		}
-
-		// n === 128; no-op
 	}
 
 	return result
 }
 
-function calculateDecompressedSize(data: Uint8Array): number {
+function calculateSizeDecompressed(data: Uint8Array): number {
+	let i = 0
 	let size = 0
-	let index = 0
 
-	while (index < data.length) {
-		const count = data[index++]
+	while (i < data.length) {
+		const n = data[i++]
 
-		if (index >= data.length) {
-			throw new PackBitsError(`Unexpected end of compressed data`)
-		}
-
-		if (count < MAX_RUN_LENGTH) {
-			// Literal run
-			const runLength = count + 1
-			if (index + runLength > data.length) {
-				throw new PackBitsError(`Malformed compressed data: literal run exceeds data length`)
+		if (n > 128) { // replicate run
+			if (i >= data.length) {
+				throw new PackBitsError(`Unexpected end of PackBits data: expected 1 more byte`)
 			}
-			size += runLength
-			index += runLength
-		} else if (count > MAX_RUN_LENGTH) {
-			// Repeated run
-			size += 257 - count
-			index += 1
-		}
 
-		// n === 128; no-op
+			size += 257 - n
+			i += 1
+		} else if (n < 128) { // literal run
+			const runLength = n + 1
+			if (i + runLength > data.length) {
+				throw new PackBitsError(`Unexpected end of PackBits data: expected ${i + runLength - data.length} more byte(s)`)
+			}
+
+			size += runLength
+			i += runLength
+		}
 	}
 
 	return size
