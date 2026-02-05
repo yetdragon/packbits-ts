@@ -1,5 +1,26 @@
 /**
  * PackBits is a simple run-length compression algorithm used in Macintosh PICT and TIFF files.
+ *
+ * @example
+ * ```typescript
+ * import { compress, decompress } from "jsr:@yetdragon/packbits"
+ *
+ * // Example data
+ * const data = new Uint8Array([
+ *   0xAA, 0xAA, 0xAA, 0x80, 0x00, 0x2A, 0xAA, 0xAA, 0xAA, 0xAA,
+ *   0x80, 0x00, 0x2A, 0x22, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA,
+ *   0xAA, 0xAA, 0xAA, 0xAA
+ * ])
+ *
+ * // Compress the data
+ * const compressed = compress(data)
+ * console.log("Compressed size:", compressed.length)
+ *
+ * // Decompress back
+ * const decompressed = decompress(compressed)
+ * console.log("Original size:", decompressed.length)
+ * ```
+ *
  * @module packbits
  */
 
